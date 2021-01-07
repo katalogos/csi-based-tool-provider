@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+spec:
+  selector:
+    matchLabels:
+      app: csi-based-tool-provider-test
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: csi-based-tool-provider-test
+    spec:
+      initContainers:
+      - name: git-sync
+        image: k8s.gcr.io/git-sync:v3.1.3
+        volumeMounts:
+        - name: source
+          mountPath: /tmp/git
+        env:
+        - name: GIT_SYNC_REPO
+          value: https://github.com/quarkusio/quarkus-quickstarts.git
+        - name: GIT_SYNC_DEST
+          value: quarkus-quickstarts
+        - name: GIT_SYNC_ONE_TIME
+          value: "true"
+      containers:
+      - name: main
+        image: registry.access.redhat.com/ubi8/ubi
+        args:
+          - ./mvnw
+          - compile
+          - quarkus:dev
+          - -Dquarkus.http.host=0.0.0.0
+        workingDir: /src/quarkus-quickstarts/getting-started
+        ports:
+          - containerPort: 8080
+        env:
+          - name: JAVA_HOME
+            value: /usr/lib/jvm/jdk-11
+          - name: M2_HOME
+            value: /opt/apache-maven-3.6.3
+        volumeMounts:
+        - name: java
+          mountPath: /usr/lib/jvm/jdk-11
+        - name: maven
+          mountPath: /opt/apache-maven-3.6.3
+        - name: source
+          mountPath: /src
+      volumes:
+      - name: java
+        csi: 
+          driver: toolprovider.csi.davidfestal
+          volumeAttributes:
+            image: quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
+      - name: maven
+        csi:
+          driver: toolprovider.csi.davidfestal
+          volumeAttributes:
+            image: quay.io/dfestal/csi-tool-maven-3.6.3:latest
+      - name: source
+        emptyDir: {}
