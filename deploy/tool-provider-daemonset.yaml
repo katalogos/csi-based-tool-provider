@@ -19,11 +19,11 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/csi-toolprovider /registration/csi-toolprovider-reg.sock"]
+                command: ["/bin/sh", "-c", "rm -rf /registration/toolprovider.csi.davidfestal-reg.sock"]
           args:
             - --v=5
             - --csi-address=/csi/csi.sock
-            - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-toolprovider/csi.sock
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-toolprovider/socket/csi.sock
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -62,15 +62,16 @@ spec:
             - mountPath: /var/lib/containers/storage
               mountPropagation: Bidirectional
               name: storageroot-dir
-            - mountPath: /var/lib/containers/storage
+            - mountPath: /var/lib/shared
               mountPropagation: Bidirectional
-              name: storageroot-dir
+              readOnly: true
+              name: additional-storageroot-dir
             - mountPath: /var/run/containers/storage
               mountPropagation: Bidirectional
               name: storagerunroot-dir
       volumes:
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-toolprovider
+            path: /var/lib/kubelet/plugins/csi-toolprovider/socket
             type: DirectoryOrCreate
           name: socket-dir
         - hostPath:
@@ -84,9 +85,13 @@ spec:
         - hostPath:
             path: /var/lib/containers/storage
             type: DirectoryOrCreate
+          name: additional-storageroot-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins/csi-toolprovider/storageroot-dir
+            type: DirectoryOrCreate
           name: storageroot-dir
         - hostPath:
-            path: /var/run/containers/storage
+            path: /var/lib/kubelet/plugins/csi-toolprovider/storagerunroot-dir
             type: DirectoryOrCreate
           name: storagerunroot-dir
 
