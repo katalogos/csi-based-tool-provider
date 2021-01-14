@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: test
+  name: csi-based-tool-provider-test
 spec:
   selector:
     matchLabels:
@@ -19,6 +19,8 @@ spec:
         - name: source
           mountPath: /tmp/git
         env:
+        - name: HOME
+          value: /tmp
         - name: GIT_SYNC_REPO
           value: https://github.com/quarkusio/quarkus-quickstarts.git
         - name: GIT_SYNC_DEST
@@ -37,6 +39,8 @@ spec:
         ports:
           - containerPort: 8080
         env:
+          - name: HOME
+            value: /tmp
           - name: JAVA_HOME
             value: /usr/lib/jvm/jdk-11
           - name: M2_HOME
