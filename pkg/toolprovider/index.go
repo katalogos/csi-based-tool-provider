@@ -79,7 +79,7 @@ func addImageToIndexIfNecessary(image string, existingImageDigest digest.Digest)
 
 func getIndex() (*index, error) {
 	index := &index {}
-	output, err := runCmd(buildahPath, "manifest", "inspect", indexName)
+	output, err := runCmd(buildahPath, "manifest", "--registries-conf=unexisting.conf", "inspect", indexName)
 	if err != nil {
 		return nil, err
 	}

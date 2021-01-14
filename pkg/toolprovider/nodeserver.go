@@ -239,8 +239,16 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 
 	imageDigests, err := index.filterImagesByAnnotations(mountPathAnnotationName)
 
+	mounter := mount.New("")
+
 	if len(imageDigests) == 0 {
 		glog.Warningf("Volume %s not associated to any image in the index", volumeID)
+		glog.V(4).Infof("Still unmounting volume %s with minimal cleaning", volumeID)
+		// Unmounting the image
+		err = mounter.Unmount(targetPath)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
 
@@ -259,8 +267,6 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	glog.V(4).Infof("Volume %s had been mounted on image %s at mountpath: %s", volumeID, imageDigest, mountPath)
 	
 	glog.V(4).Infof("Unmounting volume %s", volumeID)
-
-	mounter := mount.New("")
 
 	// Unmounting the image
 	err = mounter.Unmount(targetPath)
