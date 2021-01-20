@@ -1,0 +1,38 @@
+kind: CronJob
+apiVersion: batch/v1beta1
+metadata:
+  name: containerized-software-catalog-pull
+spec:
+  schedule: '0 * * * *'
+  concurrencyPolicy: Forbid
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 0      
+      completions: 1
+      parallelism: 1
+      template:
+        metadata:
+          labels:
+            app: "containerized-software-catalog-pull"
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: "kubernetes.io/hostname"
+                  labelSelector:
+                    matchLabels:
+                      app: "containerized-software-catalog-pull"
+          containers:
+            - name: jdk
+              image: >-
+                quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
+              imagePullPolicy: Always
+            - name: maven
+              image: 'quay.io/dfestal/csi-tool-maven-3.6.3:latest'
+              imagePullPolicy: Always
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 0
+      ttlSecondsAfterFinished: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
