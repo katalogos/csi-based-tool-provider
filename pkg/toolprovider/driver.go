@@ -65,12 +65,35 @@ func NewToolProviderDriver(driverName, nodeID, endpoint, version string) (*toolP
 }
 
 func (tp *toolProvider) Run() {
+	store := &metadataStore{}
+	created, cleanup := store.init(tp)
+	defer cleanup() 
+
+	if created {
+		glog.Infof("Created a new metadata store => removing all existing containers")
+		runCmd(buildahPath, "rm", "--all")
+	}
+
 	// Create GRPC servers
 	tp.ids = NewIdentityServer(tp.name, tp.version)
-	tp.ns = NewNodeServer(tp.nodeID)
+	tp.ns = NewNodeServer(tp.nodeID, store)
 	tp.cs = NewControllerServer(tp.nodeID)
 
 	s := NewNonBlockingGRPCServer()
 	s.Start(tp.endpoint, tp.ids, tp.cs, tp.ns)
 	s.Wait()
 }
+
+func (tp *toolProvider) Errorf(format string, args ...interface{}) {
+	glog.Errorf(format, args...)
+}
+func (tp *toolProvider) Warningf(format string, args ...interface{}) {
+	glog.Warningf(format, args...)
+}
+func (tp *toolProvider) Infof(format string, args ...interface{}) {
+	glog.V(6).Infof(format, args...)
+}
+func (tp *toolProvider) Debugf(format string, args ...interface{}) {
+	glog.V(7).Infof(format, args...)
+}
+

@@ -27,6 +27,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
+
 )
 
 func NewNonBlockingGRPCServer() *nonBlockingGRPCServer {
@@ -93,16 +94,6 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, c
 	}
 	if ns != nil {
 		csi.RegisterNodeServer(server, ns)
-	}
-
-	glog.Infof("Creating index if necessary")
-	created, err := createIndexIfNecessary()
-	if err != nil {
-		glog.Fatalf("Failed to create index: %v", err)
-	}
-	if created {
-		glog.Infof("Created a new Index => removing all existing containers")
-		runCmd(buildahPath, "rm", "--all")
 	}
 
 	glog.Infof("Listening for connections on address: %#v", listener.Addr())
