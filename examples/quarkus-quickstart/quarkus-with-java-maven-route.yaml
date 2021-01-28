@@ -1,0 +1,11 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: csi-based-tool-provider-test
+spec:
+  to:
+    kind: Service
+    name: csi-based-tool-provider-test
+  port:
+    targetPort: http
+  wildcardPolicy: None
