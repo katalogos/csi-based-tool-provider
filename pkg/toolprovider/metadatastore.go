@@ -128,7 +128,8 @@ func (store *metadataStore) updateImage(
 	image string,
 	newDigest string,
 	getImageDigestFromContainer func(containerID string) (string, error),
-	createContainer func(image, newDigest string) (string, string, error),
+	createContainer func(image, newDigest string) (string, error),
+	mountContainer func(containerID string) (string, error),
 	deleteContainer func(containerID string) error,
 ) error {
 	return store.db.Update(func(txn *badger.Txn) error {
@@ -143,7 +144,7 @@ func (store *metadataStore) updateImage(
 			if err != nil {
 				return err
 			}
-			containerID := string(containerIDBytes)
+			containerID = string(containerIDBytes)
 			currentDigest, err = getImageDigestFromContainer(containerID)
 			if err != nil {
 				return err
@@ -151,7 +152,29 @@ func (store *metadataStore) updateImage(
 		}
 	
 		if newDigest == currentDigest {
-			// Nothing to update. The image Sha is the same and it already has a container created
+			// The image Sha is the same and it already has a container created
+			// However if the node was just restarted, it might be that the container
+			// is not mounted properly anymore. Since it doesn't hurt to mount a
+			// container several times through buildah, let's mount it anyway.
+			item, err = txn.Get(keys.containerMountPath(containerID))
+			if err == nil {
+				storedMountPath, err := item.ValueCopy(nil)
+				if err != nil {
+					glog.Errorf("The mount path for container %s cannot be retrieved: %v", containerID, err)
+				} else {
+					containerMountPath, err := mountContainer(containerID)
+					if err != nil {
+						glog.Errorf("The already-existing container %s cannot be mounted: %s", containerID, err)
+						return err
+					}
+					if containerMountPath != string(storedMountPath) {
+						glog.Errorf("The existing mount path (%s) doesn't match the stored mount path (%s) for container %s", containerMountPath, storedMountPath, containerID)
+					}
+				}
+			} else {
+				glog.Errorf("The mount path should be known for container %s: %v", containerID, err)
+			}
+	  
 			return nil
 		}
 	
@@ -162,11 +185,16 @@ func (store *metadataStore) updateImage(
 			}
 		}
 
-		newContainerID, mountPath, err := createContainer(image, newDigest) 		
+		newContainerID, err := createContainer(image, newDigest) 		
 		if err != nil {
 			return err
 		}
-	
+
+		mountPath, err := mountContainer(containerID) 		
+		if err != nil {
+			return err
+		}
+		
 		err = txn.Set(keys.containerForImage(image), []byte(newContainerID))
 		if err != nil {
 			deleteContainer(newContainerID)
@@ -287,6 +315,8 @@ func (store *metadataStore) init(logger badger.Logger) (createdStore bool, clean
 	if err != nil {
 		glog.Fatalf("Failed to create metadata store: %v", err)
 	}
+
+	updateImages(store)
 
 	gcTicker := time.NewTicker(5 * time.Minute)
 	go store.garbageCollector(gcTicker)

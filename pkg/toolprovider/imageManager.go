@@ -38,7 +38,7 @@ func getImageDigestFromContainer(containerID string) (string, error) {
 	return imageDigest, nil
 }
 
-func createContainer(image, newDigest string) (string, string, error) {
+func createContainer(image, newDigest string) (string, error) {
 	// create a new container from image with new digest
 	
 	glog.V(4).Infof("Creating container from image %s with digest %s", image, newDigest)
@@ -46,40 +46,42 @@ func createContainer(image, newDigest string) (string, string, error) {
 	// Build image reference with digest
 	imageReference, err := reference.ParseDockerRef(image)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	imageName, err := reference.WithName(imageReference.Name())
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	imageDigest, err := digest.Parse(newDigest)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	imageNameWithDigest, err := reference.WithDigest(imageName, imageDigest)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	// Create a container from the image
 	containerID, err := runCmd(buildahPath, "from", imageNameWithDigest.String())
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	glog.V(4).Infof("  => Container created from Image %s : %s", image, containerID)
+	return containerID, nil			
+}
 
+func mountContainer(containerID string) (string, error) {
 	glog.V(4).Infof("Mounting container %s", containerID)
 	containerMount, err := runCmd(buildahPath, "mount", containerID)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	glog.V(4).Infof("Container %s mounted at %s", containerID, containerMount)
 	
-	return containerID, containerMount, nil			
+	return containerMount, nil			
 }
 
 func deleteContainer(containerID string) error {
@@ -117,6 +119,7 @@ func updateImages(store *metadataStore) {
 			newDigest,
 			getImageDigestFromContainer,
 			createContainer,
+			mountContainer,
 			deleteContainer,
 		); err != nil {
 			glog.Error(err)

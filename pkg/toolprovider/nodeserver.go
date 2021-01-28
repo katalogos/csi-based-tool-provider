@@ -101,7 +101,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 	if err != nil {
 		glog.Error(err)
-		return nil, status.Error(codes.Internal, "Image '" + image + "' connot be mounted into the container for an unexpected reason:" + err.Error())
+		return nil, status.Error(codes.Internal, "Image '" + image + "' cannot be mounted into the container for an unexpected reason:" + err.Error())
 	}
 
 	// Mount container
