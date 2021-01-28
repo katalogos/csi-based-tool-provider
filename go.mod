@@ -5,7 +5,6 @@ go 1.12
 require (
 	github.com/container-storage-interface/spec v1.2.0
 	github.com/containers/image/v5 v5.9.0
-	github.com/dgraph-io/badger v1.6.2
 	github.com/dgraph-io/badger/v3 v3.2011.0
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/google/uuid v1.0.0 // indirect
