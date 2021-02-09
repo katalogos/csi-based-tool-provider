@@ -1,7 +1,7 @@
 kind: CronJob
 apiVersion: batch/v1beta1
 metadata:
-  name: containerized-software-catalog-pull
+  name: kcsc-catalog-puller
 spec:
   schedule: '0 * * * *'
   concurrencyPolicy: Forbid
@@ -14,7 +14,7 @@ spec:
       template:
         metadata:
           labels:
-            app: "containerized-software-catalog-pull"
+            app: "kcsc-catalog-puller"
         spec:
           affinity:
             podAntiAffinity:
@@ -22,7 +22,7 @@ spec:
                 - topologyKey: "kubernetes.io/hostname"
                   labelSelector:
                     matchLabels:
-                      app: "containerized-software-catalog-pull"
+                      app: "kcsc-catalog-puller"
           containers:
             - name: jdk
               image: >-

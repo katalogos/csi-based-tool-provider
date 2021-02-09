@@ -55,12 +55,12 @@ spec:
       volumes:
       - name: java
         csi: 
-          driver: toolprovider.csi.davidfestal
+          driver: toolprovider.csi.kcsc
           volumeAttributes:
             image: quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
       - name: maven
         csi:
-          driver: toolprovider.csi.davidfestal
+          driver: toolprovider.csi.kcsc
           volumeAttributes:
             image: quay.io/dfestal/csi-tool-maven-3.6.3:latest
       - name: source

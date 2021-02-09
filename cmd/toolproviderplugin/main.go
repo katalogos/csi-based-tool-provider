@@ -29,7 +29,7 @@ func init() {
 
 var (
 	endpoint          = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	driverName        = flag.String("drivername", "toolprovider.csi.davidfestal", "name of the driver")
+	driverName        = flag.String("drivername", "toolprovider.csi.kcsc", "name of the driver")
 	nodeID            = flag.String("nodeid", "", "node id")
 	showVersion       = flag.Bool("version", false, "Show version.")
 	// Set by the build process

@@ -1,15 +1,15 @@
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
-  name: csi-toolprovider
+  name: kcsc-csi-toolprovider
 spec:
   selector:
     matchLabels:
-      app: csi-toolprovider
+      app: kcsc-csi-toolprovider
   template:
     metadata:
       labels:
-        app: csi-toolprovider
+        app: kcsc-csi-toolprovider
     spec:
       hostNetwork: true
       containers:
@@ -19,11 +19,11 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/toolprovider.csi.davidfestal-reg.sock"]
+                command: ["/bin/sh", "-c", "rm -rf /registration/toolprovider.csi.kcsc-reg.sock"]
           args:
             - --v=5
             - --csi-address=/csi/csi.sock
-            - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-toolprovider/socket/csi.sock
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/kcsc-csi-toolprovider/socket/csi.sock
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -73,7 +73,7 @@ spec:
               name: metadata-store-dir
       volumes:
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-toolprovider/socket
+            path: /var/lib/kubelet/plugins/kcsc-csi-toolprovider/socket
             type: DirectoryOrCreate
           name: socket-dir
         - hostPath:
@@ -89,15 +89,15 @@ spec:
             type: DirectoryOrCreate
           name: additional-storageroot-dir
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-toolprovider/metadata-store-dir
+            path: /var/lib/kubelet/plugins/kcsc-csi-toolprovider/metadata-store-dir
             type: DirectoryOrCreate
           name: metadata-store-dir
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-toolprovider/storageroot-dir
+            path: /var/lib/kubelet/plugins/kcsc-csi-toolprovider/storageroot-dir
             type: DirectoryOrCreate
           name: storageroot-dir
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-toolprovider/storagerunroot-dir
+            path: /var/lib/kubelet/plugins/kcsc-csi-toolprovider/storagerunroot-dir
             type: DirectoryOrCreate
           name: storagerunroot-dir
 
