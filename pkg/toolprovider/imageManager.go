@@ -15,6 +15,9 @@ limitations under the License.
 package toolprovider
 
 import (
+	"io/ioutil"
+	"strings"
+
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/util/mount"
@@ -22,11 +25,18 @@ import (
 	"github.com/containers/image/v5/docker/reference"
 )
 
-func getCatalogImagesFromConfigMap(_ context.Context) ([]string, error) {
-	return []string {
-		"quay.io/dfestal/csi-tool-maven-3.6.3:latest",
-		"quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest",
-	}, nil
+const (
+	configDirectory = "/etc/toolprovider-catalog-config/"
+	imagesConfigFile = "images"
+)
+
+func getCatalogImagesFromConfigMap(ctx context.Context) ([]string, error) {
+	imagesBytes, err := ioutil.ReadFile(configDirectory + imagesConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(strings.Trim(string(imagesBytes), "\n"), "\n"), nil
 }
 
 func getImageDigestFromContainer(ctx context.Context, containerID string) (string, error) {
