@@ -30,7 +30,7 @@ version=$("$GO" version) || die "determining version of $GO failed"
 # shellcheck disable=SC2001
 majorminor=$(echo "$version" | sed -e 's/.*go\([0-9]*\)\.\([0-9]*\).*/\1.\2/')
 # shellcheck disable=SC2001
-expected=$(grep "^ *- go:" "release-tools/travis.yml" | sed -e 's/.*go: *\([0-9]*\)\.\([0-9]*\).*/\1.\2/')
+expected=1.14
 
 if [ "$majorminor" != "$expected" ]; then
     cat >&2 <<EOF
