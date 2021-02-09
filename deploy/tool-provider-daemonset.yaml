@@ -39,7 +39,7 @@ spec:
         - name: toolprovider
           image: quay.io/dfestal/toolproviderplugin:canary
           args:
-            - "--v=5"
+            - "--v=2"
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--nodeid=$(KUBE_NODE_NAME)"
           env:
@@ -69,7 +69,7 @@ spec:
             - mountPath: /var/run/containers/storage
               mountPropagation: Bidirectional
               name: storagerunroot-dir
-            - mountPath: /var/lib/toolprovider-metadata-store
+            - mountPath: /var/run/toolprovider-metadata-store
               name: metadata-store-dir
       volumes:
         - hostPath:

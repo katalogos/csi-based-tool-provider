@@ -56,7 +56,8 @@ func (ids *identityServer) Probe(ctx context.Context, req *csi.ProbeRequest) (*c
 }
 
 func (ids *identityServer) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	glog.V(5).Infof("Using default capabilities")
+	logger := contextLogger(ctx)
+	logger.Infof("Using default capabilities")
 	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
 			{

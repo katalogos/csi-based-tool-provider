@@ -27,7 +27,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
-
 )
 
 func NewNonBlockingGRPCServer() *nonBlockingGRPCServer {
@@ -62,7 +61,6 @@ func (s *nonBlockingGRPCServer) ForceStop() {
 }
 
 func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer) {
-
 	proto, addr, err := parseEndpoint(endpoint)
 	if err != nil {
 		glog.Fatal(err.Error())
@@ -112,14 +110,46 @@ func parseEndpoint(ep string) (string, string, error) {
 	return "", "", fmt.Errorf("Invalid endpoint: %v", ep)
 }
 
+var callNumber uint32
+var callIDMutex sync.Mutex = sync.Mutex{}
+
+func getCallLogPrefix() string {
+	callIDMutex.Lock()
+	defer callIDMutex.Unlock()	
+	prefix := fmt.Sprintf("GRPC-%08X", callNumber)
+	callNumber ++
+	return prefix
+}
+
 func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	glog.V(3).Infof("GRPC call: %s", info.FullMethod)
-	glog.V(5).Infof("GRPC request: %+v", protosanitizer.StripSecrets(req))
-	resp, err := handler(ctx, req)
+	prefix := getCallLogPrefix()
+	grpcCallLogger := buildLogger(prefix, levelGRPCCalls)
+	handlerLogger := grpcCallLogger
+	volumePublishingLogger := buildLogger(prefix, levelVolumePublishing)
+	method := info.FullMethod
+	methodParts := strings.Split(method, "/")
+	methodName := methodParts[len(methodParts)-1]
+	volumePublishingCall := false
+	if methodName == "NodePublishVolume" || methodName == "NodeUnpublishVolume" {
+		volumePublishingCall = true
+	}
+	grpcCallLogger.Infof("GRPC call: %s", method)
+	grpcCallLogger.Infof("GRPC request: %+v", protosanitizer.StripSecrets(req), req)
+	if volumePublishingCall {
+		volumePublishingLogger.Infof("Starting %s: ", method)
+		handlerLogger = volumePublishingLogger
+	}
+	resp, err := handler(context.WithValue(ctx, loggerKey, handlerLogger), req)
 	if err != nil {
-		glog.Errorf("GRPC error: %v", err)
+		grpcCallLogger.Errorf("GRPC error: %v - response: %+v", err, protosanitizer.StripSecrets(resp))
+		if volumePublishingCall {
+			volumePublishingLogger.Infof("Finished %s with error: %v", method, err)
+		}
 	} else {
-		glog.V(5).Infof("GRPC response: %+v", protosanitizer.StripSecrets(resp))
+		grpcCallLogger.Infof("GRPC response: %+v", protosanitizer.StripSecrets(resp))
+		if volumePublishingCall {
+			volumePublishingLogger.Infof("Finished %s successfully", method)
+		}
 	}
 	return resp, err
 }

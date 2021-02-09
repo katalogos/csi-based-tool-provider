@@ -15,7 +15,9 @@ limitations under the License.
 package toolprovider
 
 import (
+	"context"
 	"errors"
+
 	"github.com/golang/glog"
 )
 
@@ -66,13 +68,15 @@ func NewToolProviderDriver(driverName, nodeID, endpoint, version string) (*toolP
 
 func (tp *toolProvider) Run() {
 	store := &metadataStore{}
-	created, cleanup := store.init(tp)
+	created, startBackgroundTasks, cleanup := store.init()
 	defer cleanup() 
 
 	if created {
 		glog.Infof("Created a new metadata store => removing all existing containers")
-		runCmd(buildahPath, "rm", "--all")
+		runCmd(context.Background(), buildahPath, "rm", "--all")
 	}
+
+	startBackgroundTasks()
 
 	// Create GRPC servers
 	tp.ids = NewIdentityServer(tp.name, tp.version)
@@ -83,17 +87,3 @@ func (tp *toolProvider) Run() {
 	s.Start(tp.endpoint, tp.ids, tp.cs, tp.ns)
 	s.Wait()
 }
-
-func (tp *toolProvider) Errorf(format string, args ...interface{}) {
-	glog.Errorf(format, args...)
-}
-func (tp *toolProvider) Warningf(format string, args ...interface{}) {
-	glog.Warningf(format, args...)
-}
-func (tp *toolProvider) Infof(format string, args ...interface{}) {
-	glog.V(6).Infof(format, args...)
-}
-func (tp *toolProvider) Debugf(format string, args ...interface{}) {
-	glog.V(7).Infof(format, args...)
-}
-

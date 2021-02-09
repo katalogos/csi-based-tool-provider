@@ -16,32 +16,33 @@ package toolprovider
 
 import (
 	"github.com/opencontainers/go-digest"
-
-	"github.com/golang/glog"
+	"golang.org/x/net/context"
+	"k8s.io/kubernetes/pkg/util/mount"
 
 	"github.com/containers/image/v5/docker/reference"
 )
 
-func getCatalogImagesFromConfigMap() ([]string, error) {
+func getCatalogImagesFromConfigMap(_ context.Context) ([]string, error) {
 	return []string {
 		"quay.io/dfestal/csi-tool-maven-3.6.3:latest",
 		"quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest",
 	}, nil
 }
 
-func getImageDigestFromContainer(containerID string) (string, error) {
+func getImageDigestFromContainer(ctx context.Context, containerID string) (string, error) {
 	// Create a container from the image
-	imageDigest, err := runCmd(buildahPath, "inspect", "--format", "{{.FromImageDigest}}", containerID)
+	imageDigest, err := runCmd(ctx, buildahPath, "inspect", "--format", "{{.FromImageDigest}}", containerID)
 	if err != nil {
 		return "", err
 	}
 	return imageDigest, nil
 }
 
-func createContainer(image, newDigest string) (string, error) {
-	// create a new container from image with new digest
+func createContainer(ctx context.Context, image, newDigest string) (string, error) {
+	logger := contextLogger(ctx)
 	
-	glog.V(4).Infof("Creating container from image %s with digest %s", image, newDigest)
+	// create a new container from image with new digest	
+	logger.Infof("Creating container from image %s with digest %s", image, newDigest)
 
 	// Build image reference with digest
 	imageReference, err := reference.ParseDockerRef(image)
@@ -65,64 +66,97 @@ func createContainer(image, newDigest string) (string, error) {
 	}
 
 	// Create a container from the image
-	containerID, err := runCmd(buildahPath, "from", imageNameWithDigest.String())
+	containerID, err := runCmd(ctx, buildahPath, "from", imageNameWithDigest.String())
 	if err != nil {
 		return "", err
 	}
+
+	// create a new container from image with new digest	
+	logger.Infof("Container created from image %s with digest %s: %s", image, newDigest, containerID)
 
 	return containerID, nil			
 }
 
-func mountContainer(containerID string) (string, error) {
-	glog.V(4).Infof("Mounting container %s", containerID)
-	containerMount, err := runCmd(buildahPath, "mount", containerID)
+func mountContainer(ctx context.Context, containerID string) (string, error) {
+	logger := contextLogger(ctx)
+
+	logger.Infof("Mounting container %s", containerID)
+	containerMount, err := runCmd(ctx, buildahPath, "mount", containerID)
 	if err != nil {
 		return "", err
 	}
-	glog.V(4).Infof("Container %s mounted at %s", containerID, containerMount)
+	logger.Infof("Container %s mounted at %s", containerID, containerMount)
 	
 	return containerMount, nil			
 }
 
-func deleteContainer(containerID string) error {
-	// Create a container from the image
-	_, err := runCmd(buildahPath, "rm", containerID)
+func deleteContainer(ctx context.Context, containerID string) error {
+	logger := contextLogger(ctx)
+
+	logger.Infof("Deleting container %s", containerID)
+
+	// Delete the container
+	_, err := runCmd(ctx, buildahPath, "rm", containerID)
 	if err != nil {
-		glog.Error(err)
+		logger.Errorf("%v", err)
+		return err
 	}
-	return err
+	logger.Infof("Container %s deleted", containerID)	
+	return nil
 }
 
-func updateImages(store *metadataStore) {
-	images, err := getCatalogImagesFromConfigMap()
+func updateImages(ctx context.Context, store *metadataStore) {
+	logger := contextLogger(ctx)
+	images, err := getCatalogImagesFromConfigMap(ctx)
 	if err != nil {
-		glog.Error(err)
+		logger.Errorf("%v", err)
 		return
 	}
 
-	if errs := store.deleteImagesMissingFromCatalog(images); len(errs) > 0 {
+	if errs := store.deleteImagesMissingFromCatalog(ctx, images); len(errs) > 0 {
 		for _, err := range errs {
-			glog.Error(err)
+			logger.Errorf("%v", err)
 		} 
 	}
 	
+	mounter := mount.New("")
+	mountPoints, err := mounter.List()
+	if err != nil {
+		logger.Warningf("Unexpected error when parsng the /proc/mounts file: %s", err)
+		mountPoints = []mount.MountPoint{}
+	}
+	isPathMounted := func(mountPath string) bool {
+		if mountPath == "" {
+			return false
+		}
+		for _, mountPoint := range mountPoints {
+			if mountPath == mountPoint.Path {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, image := range images {
-		newDigest, err := runCmd(buildahPath, "images", "--format={{.Digest}}", image)
+
+		logger.Infof("Updating image: %s", image)
+		newDigest, err := runCmd(ctx, buildahPath, "images", "--format={{.Digest}}", image)
 		if err != nil {
-			glog.Error("Image " + image + " not available !")
-			glog.Error(err)
+			logger.Errorf("Image %s not available : %v", image, err)
 			continue
 		}
 	
 		if err = store.updateImage(
+			ctx,
 			image,
 			newDigest,
 			getImageDigestFromContainer,
 			createContainer,
+			isPathMounted,
 			mountContainer,
 			deleteContainer,
 		); err != nil {
-			glog.Error(err)
+			logger.Errorf("%v", err)
 		}
 	}
 }

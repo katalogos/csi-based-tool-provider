@@ -16,21 +16,17 @@ package toolprovider
 
 import (
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	badger "github.com/dgraph-io/badger/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/kubernetes/pkg/util/mount"
-	badger "github.com/dgraph-io/badger/v3"	
 	"k8s.io/utils/keymutex"
 )
-
-const buildahPath = "/bin/buildah"
 
 type nodeServer struct {
 	nodeID string
@@ -79,6 +75,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
+	logger := contextLogger(ctx)
 	volumeLock := ns.lock(volumeID)
 	defer volumeLock.unlock()
 	
@@ -86,29 +83,29 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	// Check the image existence
 
-	glog.V(4).Infof("Checking whether image %s is known", image)
+	logger.Infof("Checking whether image %s is known", image)
 
 	var err error = nil
 
 	containerID, mountPath, err := ns.store.selectContainerForVolume(volumeID, image)
 	if err == badger.ErrEmptyKey {
-		glog.Error(err)
+		logger.Errorf("%v", err)
 		return nil, status.Error(codes.Internal, "Image '" + image + "' was not found in the catalog and could not be mounted in the container")
 	}
 	if err == badger.ErrConflict {
-		glog.Error(err)
+		logger.Errorf("%v", err)
 		return nil, status.Error(codes.Internal, "Image '" + image + "' is being updated. Please retry later")
 	}
 	if err != nil {
-		glog.Error(err)
+		logger.Errorf("%v", err)
 		return nil, status.Error(codes.Internal, "Image '" + image + "' cannot be mounted into the container for an unexpected reason:" + err.Error())
 	}
 
 	// Mount container
 
 	cleaningOnError := func() {
-		if cleaningErr := ns.store.dropVolumeContainerOnMountError(containerID, volumeID); cleaningErr != nil {
-			glog.Error(err)		
+		if cleaningErr := ns.store.dropVolumeContainerOnMountError(ctx, containerID, volumeID); cleaningErr != nil {
+			logger.Errorf("%v", err)		
 		}
 	}
 
@@ -116,13 +113,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	if err != nil {
 		if os.IsNotExist(err) {
 			if err = os.MkdirAll(targetPath, 0750); err != nil {
-				glog.Error(err)
+				logger.Errorf("%v", err)
 				cleaningOnError()
 				return nil, status.Error(codes.Internal, err.Error())
 			}
 			notMnt = true
 		} else {
-			glog.Error(err)
+			logger.Errorf("%v", err)
 			cleaningOnError()
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -133,12 +130,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	glog.V(4).Infof("Mounting volume target path to container mount")
+	logger.Infof("Mounting volume target path to container mount")
 
 	options := []string{"bind", "ro"}
 	mounter := mount.New("")
 	if err := mounter.Mount(mountPath, targetPath, "", options); err != nil {
-		glog.Error(err)
+		logger.Errorf("%v", err)
 		cleaningOnError()
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -169,21 +166,12 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	err = ns.store.dropVolumeContainerOnUnmount(volumeID)
+	err = ns.store.dropVolumeContainerOnUnmount(ctx, volumeID)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
-}
-
-func runCmd(execPath string, args ...string) (string, error) {
-	cmd := exec.Command(execPath, args...)
-	glog.V(6).Infof("Executing command: %s\n", cmd.String())
-	output, execErr := cmd.CombinedOutput()
-	result := strings.TrimSpace(string(output[:]))
-	glog.V(6).Infof("    => Output = %s\n", result)
-	return result, execErr
 }
 
 func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
