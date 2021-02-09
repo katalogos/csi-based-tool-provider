@@ -38,6 +38,9 @@ spec:
 
         - name: toolprovider
           image: quay.io/dfestal/toolproviderplugin:canary
+          ports:
+            - name: web
+              containerPort: 8080  
           args:
             - "--v=2"
             - "--endpoint=$(CSI_ENDPOINT)"

@@ -9,6 +9,7 @@ require (
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/kubernetes-csi/csi-lib-utils v0.3.0
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/prometheus/client_golang v1.9.0
 	golang.org/x/net v0.0.0-20201021035429-f5854403a974
 	google.golang.org/grpc v1.26.0
 	k8s.io/apimachinery v0.0.0-20181110190943-2a7c93004028 // indirect

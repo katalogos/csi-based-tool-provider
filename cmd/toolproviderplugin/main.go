@@ -17,10 +17,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 
 	"github.com/davidfestal/csi-based-tool-provider/pkg/toolprovider"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func init() {
@@ -45,6 +47,11 @@ func main() {
 		return
 	}
 
+	http.Handle("/metrics", promhttp.Handler())
+	
+	println("Creating metrics server")
+	http.ListenAndServe(":8080", nil)
+		
 	handle()
 	os.Exit(0)
 }
