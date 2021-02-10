@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -62,6 +63,13 @@ func (ns *nodeServer) lock(volumeID string) *volumeLock {
 }
 
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+	var metricStatus string
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+		getVolumeMountLatency.WithLabelValues(metricStatus).Observe(v)
+	}))
+	defer func() {
+		timer.ObserveDuration()
+	}()
 	// Check arguments
 	if req.GetVolumeCapability() == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
@@ -90,14 +98,17 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	containerID, mountPath, err := ns.store.selectContainerForVolume(volumeID, image)
 	if err == badger.ErrEmptyKey {
 		logger.Errorf("%v", err)
+		metricStatus = "ImageNotFoundError"
 		return nil, status.Error(codes.Internal, "Image '" + image + "' was not found in the catalog and could not be mounted in the container")
 	}
 	if err == badger.ErrConflict {
 		logger.Errorf("%v", err)
+		metricStatus = "MetadataStoreConflictError"
 		return nil, status.Error(codes.Internal, "Image '" + image + "' is being updated. Please retry later")
 	}
 	if err != nil {
 		logger.Errorf("%v", err)
+		metricStatus = "UnexpectedError"
 		return nil, status.Error(codes.Internal, "Image '" + image + "' cannot be mounted into the container for an unexpected reason:" + err.Error())
 	}
 
@@ -127,6 +138,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	if !notMnt {
 		cleaningOnError()
+		metricStatus = "NotMountPointError"
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
@@ -136,14 +148,23 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	mounter := mount.New("")
 	if err := mounter.Mount(mountPath, targetPath, "", options); err != nil {
 		logger.Errorf("%v", err)
+		metricStatus = "MountError"
 		cleaningOnError()
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	metricStatus = "Success"
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+	var metricStatus string
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+		getVolumeUnmountLatency.WithLabelValues(metricStatus).Observe(v)
+	}))
+	defer func() {
+		timer.ObserveDuration()
+	}()
 
 	// Check arguments
 	volumeID := req.GetVolumeId()
@@ -163,14 +184,17 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	// Unmounting the image
 	err := mounter.Unmount(targetPath)
 	if err != nil {
+		metricStatus = "UnmountError"
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	err = ns.store.dropVolumeContainerOnUnmount(ctx, volumeID)
 	if err != nil {
+		metricStatus = "MetadataStoreUpdateError"
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	metricStatus = "Success"
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
