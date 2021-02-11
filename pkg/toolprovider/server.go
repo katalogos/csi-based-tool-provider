@@ -20,6 +20,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
@@ -122,6 +123,7 @@ func getCallLogPrefix() string {
 }
 
 func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now() 
 	prefix := getCallLogPrefix()
 	grpcCallLogger := buildLogger(prefix, levelGRPCCalls)
 	handlerLogger := grpcCallLogger
@@ -140,15 +142,16 @@ func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, h
 		handlerLogger = volumePublishingLogger
 	}
 	resp, err := handler(context.WithValue(ctx, loggerKey, handlerLogger), req)
+	duration := time.Now().Sub(start)
 	if err != nil {
 		grpcCallLogger.Errorf("GRPC error: %v - response: %+v", err, protosanitizer.StripSecrets(resp))
 		if volumePublishingCall {
-			volumePublishingLogger.Infof("Finished %s with error: %v", method, err)
+			volumePublishingLogger.Infof("Finished %s in %v with error: %v", method, duration, err)
 		}
 	} else {
 		grpcCallLogger.Infof("GRPC response: %+v", protosanitizer.StripSecrets(resp))
 		if volumePublishingCall {
-			volumePublishingLogger.Infof("Finished %s successfully", method)
+			volumePublishingLogger.Infof("Finished %s in %v successfully", method, duration)
 		}
 	}
 	return resp, err
