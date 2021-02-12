@@ -48,13 +48,6 @@ func InitMetrics() {
 	glog.Infof("Registering metrics")
 	prometheus.MustRegister(getVolumeMountLatency)
 	prometheus.MustRegister(getVolumeUnmountLatency)
-	
 	http.Handle("/metrics", promhttp.Handler())
-	glog.Infof("Creating metrics server")
-	go func() {
-		if err := http.ListenAndServe(":8080", nil); err != nil {
-			glog.Fatal(err)
-		}
-	}()
 }
 

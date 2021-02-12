@@ -17,10 +17,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 
 	"github.com/davidfestal/csi-based-tool-provider/pkg/toolprovider"
+	"github.com/golang/glog"
 )
 
 func init() {
@@ -46,6 +48,13 @@ func main() {
 	}
 	
 	toolprovider.InitMetrics();
+
+	glog.Infof("Creating HTTP server")
+	go func() {
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			glog.Fatal(err)
+		}
+	}()
 
 	handle()
 	os.Exit(0)

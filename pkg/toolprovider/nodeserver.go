@@ -15,6 +15,7 @@ limitations under the License.
 package toolprovider
 
 import (
+	"io"
 	"os"
 
 	"github.com/golang/glog"
@@ -62,6 +63,22 @@ func (ns *nodeServer) lock(volumeID string) *volumeLock {
 	}
 }
 
+func isDirEmpty(path string) (bool, error) {	
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	if err != nil {
+		if err == io.EOF {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil 
+}
+
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	var metricStatus string
 	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
@@ -99,17 +116,17 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	if err == badger.ErrEmptyKey {
 		logger.Errorf("%v", err)
 		metricStatus = "ImageNotFoundError"
-		return nil, status.Error(codes.Internal, "Image '" + image + "' was not found in the catalog and could not be mounted in the container")
+		return nil, status.Error(codes.NotFound, "Image '" + image + "' was not found in the catalog and could not be mounted in the container")
 	}
 	if err == badger.ErrConflict {
 		logger.Errorf("%v", err)
 		metricStatus = "MetadataStoreConflictError"
-		return nil, status.Error(codes.Internal, "Image '" + image + "' is being updated. Please retry later")
+		return nil, status.Error(codes.Aborted, "Image '" + image + "' is being updated. Please retry later")
 	}
 	if err != nil {
 		logger.Errorf("%v", err)
 		metricStatus = "UnexpectedError"
-		return nil, status.Error(codes.Internal, "Image '" + image + "' cannot be mounted into the container for an unexpected reason:" + err.Error())
+		return nil, status.Error(codes.Unknown, "Image '" + image + "' cannot be mounted into the container for an unexpected reason:" + err.Error())
 	}
 
 	// Mount container
@@ -122,24 +139,47 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	notMnt, err := mount.New("").IsLikelyNotMountPoint(targetPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) {	
+			logger.Infof("Creating target path for volume %s: %s", volumeID, targetPath)		
 			if err = os.MkdirAll(targetPath, 0750); err != nil {
 				logger.Errorf("%v", err)
 				cleaningOnError()
-				return nil, status.Error(codes.Internal, err.Error())
+				metricStatus = "UnexpectedError"
+				return nil, status.Error(codes.Unknown, err.Error())
 			}
 			notMnt = true
 		} else {
 			logger.Errorf("%v", err)
 			cleaningOnError()
-			return nil, status.Error(codes.Internal, err.Error())
+			metricStatus = "UnexpectedError"
+			return nil, status.Error(codes.Unknown, err.Error())
 		}
 	}
 
 	if !notMnt {
+		// It IS a mount point.
+		// Target path is non-bind IsDirEmpty point
+		// That doesn't seem normal.
+		//   => Trigger an error
 		cleaningOnError()
-		metricStatus = "NotMountPointError"
-		return &csi.NodePublishVolumeResponse{}, nil
+		metricStatus = "UnexpectedError"
+		return nil, status.Error(codes.FailedPrecondition, "Target path for volume " + volumeID + " is already a mount point: " + targetPath)
+	}
+
+	containerMountPathIsEmpty, err := isDirEmpty(mountPath)
+	if err != nil {
+		cleaningOnError()
+		if os.IsNotExist(err) {
+			metricStatus = "ContainerEmpty"
+			return nil, status.Error(codes.Aborted, "MountPath  " + mountPath + " for container " + containerID + " does not exist")
+		}
+		metricStatus = "UnexpectedError"
+		return nil, status.Error(codes.Unknown, "MountPath " + mountPath + " for volume " + volumeID + " cannot be checked due to error: " + err.Error())
+	}
+
+	if containerMountPathIsEmpty {
+		metricStatus = "ContainerEmpty"
+		return nil, status.Error(codes.Aborted, "MountPath  " + mountPath + " for container " + containerID + " is empty")
 	}
 
 	logger.Infof("Mounting volume target path to container mount")
@@ -150,7 +190,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		logger.Errorf("%v", err)
 		metricStatus = "MountError"
 		cleaningOnError()
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.Unknown, err.Error())
 	}
 
 	metricStatus = "Success"

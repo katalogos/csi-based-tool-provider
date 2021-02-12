@@ -76,7 +76,13 @@ func createContainer(ctx context.Context, image, newDigest string) (string, erro
 	}
 
 	// Create a container from the image
-	containerID, err := runCmd(ctx, buildahPath, "from", imageNameWithDigest.String())
+	containerName, err := runCmd(ctx, buildahPath, "from", "--pull-never", imageNameWithDigest.String())
+	if err != nil {
+		return "", err
+	}
+
+	// Create a container from the image
+	containerID, err := runCmd(ctx, buildahPath, "containers", "-q", "--filter", "name=" + containerName)
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +138,7 @@ func updateImages(ctx context.Context, store *metadataStore) {
 	mounter := mount.New("")
 	mountPoints, err := mounter.List()
 	if err != nil {
-		logger.Warningf("Unexpected error when parsng the /proc/mounts file: %s", err)
+		logger.Warningf("Unexpected error when parsing the /proc/mounts file: %s", err)
 		mountPoints = []mount.MountPoint{}
 	}
 	isPathMounted := func(mountPath string) bool {
