@@ -18,7 +18,7 @@ Get ```csc``` tool from https://github.com/rexray/gocsi/tree/master/csc
 #### Get plugin info
 ```
 $ csc identity plugin-info --endpoint tcp://127.0.0.1:10000
-"toolprovider.csi.davidfestal"  "0.1.0"
+"toolprovider.csi.katalogos.dev"  "0.1.0"
 ```
 
 #### NodePublish a volume

@@ -1,4 +1,4 @@
-module github.com/davidfestal/csi-based-tool-provider
+module github.com/katalogos/csi-based-tool-provider
 
 go 1.12
 

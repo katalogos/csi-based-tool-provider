@@ -17,6 +17,8 @@ package toolprovider
 import (
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -198,7 +200,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 }
 
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	var metricStatus string
+	logger := contextLogger(ctx)
+	metricStatus := "Success"
 	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
 		getVolumeUnmountLatency.WithLabelValues(metricStatus).Observe(v)
 	}))
@@ -209,11 +212,13 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	// Check arguments
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
+		metricStatus = "InvalidArgument"
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
 
 	targetPath := req.GetTargetPath()
 	if len(targetPath) == 0 {
+		metricStatus = "InvalidArgument"
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
@@ -224,8 +229,19 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	// Unmounting the image
 	err := mounter.Unmount(targetPath)
 	if err != nil {
+		logger.Warningf("Unmount failed: %v", err)
+		existsPath, _ := mounter.ExistsPath(targetPath)
+		if existsPath {
+			logger.Infof("Removing mount target path: %s", targetPath)
+			args := []string{"-Rf", targetPath}
+			command := exec.Command("rm", args...)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				args := strings.Join(args, " ")
+				logger.Warningf("Removal failed: %v\nCommand: %s\nArguments: %s\nOutput: %s\n", err, "rm", args, string(output))
+			}
+		}
 		metricStatus = "UnmountError"
-		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	err = ns.store.dropVolumeContainerOnUnmount(ctx, volumeID)
@@ -234,7 +250,6 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	metricStatus = "Success"
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 

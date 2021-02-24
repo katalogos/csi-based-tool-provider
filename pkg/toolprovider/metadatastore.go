@@ -283,16 +283,23 @@ func (store *metadataStore) dropVolumeContainerOnUnmount(ctx context.Context, vo
 	return store.db.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(keys.containerForVolume(volumeID))
 		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil
+			}
 			return err
 		}
 
 		err = item.Value(func(containerIDBytes []byte) error {
 			containerID := string(containerIDBytes)
 			if err = txn.Delete(keys.containerForVolume(volumeID)); err != nil {
-				return err
+				if err != nil && err != badger.ErrKeyNotFound {
+					return err
+				}
 			}
 			if err = txn.Delete(keys.volumeOnContainer(volumeID, containerID)); err != nil {
-				return err
+				if err != nil && err != badger.ErrKeyNotFound {
+					return err
+				}
 			}
 			return nil
 		})

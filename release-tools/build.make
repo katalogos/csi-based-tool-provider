@@ -18,7 +18,7 @@
 
 # This is the default. It can be overridden in the main Makefile after
 # including build.make.
-REGISTRY_NAME=quay.io/dfestal
+REGISTRY_NAME=quay.io/katalogos
 
 # Can be set to -mod=vendor to ensure that the "vendor" directory is used.
 GOFLAGS_VENDOR=
