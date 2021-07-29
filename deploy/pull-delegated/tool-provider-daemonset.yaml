@@ -42,7 +42,6 @@ spec:
             - name: web
               containerPort: 8080  
           args:
-            - "--v=2"
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--nodeid=$(KUBE_NODE_NAME)"
           env:
@@ -68,14 +67,46 @@ spec:
             - mountPath: /var/lib/shared
               mountPropagation: Bidirectional
               readOnly: true
-              name: additional-storageroot-dir
+              name: host-storageroot-dir
             - mountPath: /var/run/containers/storage
               mountPropagation: Bidirectional
               name: storagerunroot-dir
             - mountPath: /var/run/toolprovider-metadata-store
               name: metadata-store-dir
-            - mountPath: /etc/toolprovider-catalog-config
-              name: catalog-config
+            - mountPath: /etc/katalogos/images-config
+              name: images-config
+            - mountPath: /etc/katalogos/config
+              name: config
+        - name: softwarecatalogsadapter
+          image: quay.io/katalogos/softwarecatalogsadapter:canary
+          args:
+            - "--never_pull=true"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /var/lib/containers/storage
+              mountPropagation: Bidirectional
+              name: storageroot-dir
+            - mountPath: /var/lib/shared
+              mountPropagation: Bidirectional
+              readOnly: true
+              name: host-storageroot-dir
+            - mountPath: /var/run/containers/storage
+              mountPropagation: Bidirectional
+              name: storagerunroot-dir
+            - mountPath: /etc/katalogos/mergedcatalogs-config
+              name: mergedcatalogs-config
+            - mountPath: /etc/katalogos/images-config
+              name: images-config
+            - mountPath: /etc/katalogos/config
+              name: config
       volumes:
         - hostPath:
             path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/socket
@@ -92,7 +123,7 @@ spec:
         - hostPath:
             path: /var/lib/containers/storage
             type: DirectoryOrCreate
-          name: additional-storageroot-dir
+          name: host-storageroot-dir
         - hostPath:
             path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/metadata-store-dir
             type: DirectoryOrCreate
@@ -106,6 +137,15 @@ spec:
             type: DirectoryOrCreate
           name: storagerunroot-dir
         - configMap:
-            name: katalogos-csi-toolprovider
-          name: catalog-config
+            name: katalogos-merged-catalogs
+          name: mergedcatalogs-config
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/images-config
+            type: DirectoryOrCreate
+          name: images-config
+        - configMap:
+            name: katalogos-config
+            optional: true
+          name: config
+          
 

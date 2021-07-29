@@ -21,15 +21,17 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
+	"github.com/katalogos/csi-based-tool-provider/pkg/common"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
+	"context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	badger "github.com/dgraph-io/badger/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/kubernetes/pkg/util/mount"
+	"k8s.io/mount-utils"
 	"k8s.io/utils/keymutex"
+	utilpath "k8s.io/utils/path"	
 )
 
 type nodeServer struct {
@@ -83,8 +85,9 @@ func isDirEmpty(path string) (bool, error) {
 
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	var metricStatus string
+	var metricCatalog string
 	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
-		getVolumeMountLatency.WithLabelValues(metricStatus).Observe(v)
+		getVolumeMountLatency.WithLabelValues(metricStatus, metricCatalog).Observe(v)
 	}))
 	defer func() {
 		timer.ObserveDuration()
@@ -102,7 +105,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 	volumeLock := ns.lock(volumeID)
 	defer volumeLock.unlock()
 	
@@ -114,7 +117,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	var err error = nil
 
-	containerID, mountPath, err := ns.store.selectContainerForVolume(volumeID, image)
+	containerID, catalog, mountPath, err := ns.store.selectContainerForVolume(volumeID, image)
+	metricCatalog = catalog
 	if err == badger.ErrEmptyKey {
 		logger.Errorf("%v", err)
 		metricStatus = "ImageNotFoundError"
@@ -200,7 +204,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 }
 
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 	metricStatus := "Success"
 	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
 		getVolumeUnmountLatency.WithLabelValues(metricStatus).Observe(v)
@@ -230,7 +234,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	err := mounter.Unmount(targetPath)
 	if err != nil {
 		logger.Warningf("Unmount failed: %v", err)
-		existsPath, _ := mounter.ExistsPath(targetPath)
+		existsPath, _ := utilpath.Exists(utilpath.CheckFollowSymlink, (targetPath))
 		if existsPath {
 			logger.Infof("Removing mount target path: %s", targetPath)
 			args := []string{"-Rf", targetPath}

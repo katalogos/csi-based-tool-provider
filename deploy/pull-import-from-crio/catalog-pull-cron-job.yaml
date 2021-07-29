@@ -1,0 +1,41 @@
+kind: CronJob
+apiVersion: batch/v1beta1
+metadata:
+  name: katalogos-puller
+spec:
+  schedule: '* * * * *'
+  concurrencyPolicy: Forbid
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 0      
+      completions: 1 # Set this number to the number of nodes
+      parallelism: 1 # Set this number to the number of nodes
+      template:
+        metadata:
+          labels:
+            app: "katalogos-puller"
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: "kubernetes.io/hostname"
+                  labelSelector:
+                    matchLabels:
+                      app: "katalogos-puller"
+          containers:
+            - name: bash-core-utils
+              image: >-
+                quay.io/dfestal/csi-tool-bash-coreutils:latest
+              imagePullPolicy: Always
+            - name: jdk
+              image: >-
+                quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
+              imagePullPolicy: Always
+            - name: maven
+              image: 'quay.io/dfestal/csi-tool-maven-3.6.3:latest'
+              imagePullPolicy: Always
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 0
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1

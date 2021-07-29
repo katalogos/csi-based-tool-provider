@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: katalogos-config
+data:
+  softwarecatalogsadapter.yaml: |
+    v: 5
+    retry_delay: 5s
+    pulling_interval: 30s
+    cleaning_interval: 1m
+  toolprovider.yaml: |
+    v: 5
+    metadata_image_management_interval: 30s
+    metadata_container_cleaner_interval: 1m

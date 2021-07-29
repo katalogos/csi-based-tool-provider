@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: toolprovider.csi.katalogos.dev
+spec:
+  attachRequired: false
+  podInfoOnMount: false
+  volumeLifecycleModes:
+  - Ephemeral

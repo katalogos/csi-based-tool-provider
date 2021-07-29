@@ -32,7 +32,7 @@ var getVolumeMountLatency = prometheus.NewHistogramVec(
 		ConstLabels: map[string]string{},
 		Buckets:     []float64{math.Inf(1)},
 	},
-	[]string{"status"},
+	[]string{"status","catalog"},
 )
 
 var getVolumeUnmountLatency = prometheus.NewHistogramVec(

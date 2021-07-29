@@ -12,31 +12,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package toolprovider
+package common
 
 import (
+	"flag"
 	"fmt"
 
+	"context"
+
 	"github.com/golang/glog"
-	"golang.org/x/net/context"
+	"github.com/spf13/viper"
 )
 
 type logLevel int
 
 const (
-	levelVolumePublishing logLevel = 1
-	levelImageManager logLevel = 2
-	levelContainerCleaner logLevel = 2
-	levelRunCommand logLevel = 3
-	levelKubernetesMounts logLevel = 4
-	levelBadger logLevel = 6
-	levelBadgerDebug logLevel = 7
-	levelGRPCCalls logLevel = 8
+	LevelVolumePublishing logLevel = 1
+	LevelImageManager logLevel = 2
+	LevelContainerCleaner logLevel = 2
+	LevelRunCommand logLevel = 3
+	LevelKubernetesMounts logLevel = 4
+	LevelBadger logLevel = 6
+	LevelBadgerDebug logLevel = 7
+	LevelGRPCCalls logLevel = 8
 )
-
-
-// TODO: Also add an environment variable to define if images should be pulled from inside or not.
-// Or this should still be defined by the catalog
 
 
 type loggerContextKeyType string
@@ -45,7 +44,7 @@ const (
 	loggerKey loggerContextKeyType = "logger"
 )
 
-type logger interface {
+type Logger interface {
 	Errorf(string, ...interface{})
 	Warningf(string, ...interface{})
 	Infof(string, ...interface{})
@@ -58,18 +57,25 @@ type internalLogger struct {
 	prefix string
 }
 
-var _ logger = &internalLogger{}
+var _ Logger = &internalLogger{}
 
-func contextLogger(ctx context.Context) logger {
+func ContextLogger(ctx context.Context) Logger {
 	loggerValue := ctx.Value(loggerKey)
-	logger, isLogger := loggerValue.(logger)
+	logger, isLogger := loggerValue.(Logger)
 	if isLogger && logger != nil {
 		return logger
 	}
-	return buildLogger("", 0)
+	return BuildLogger("", 0)
 }
 
-func buildLogger(prefix string, level logLevel) logger {
+func WithLogger(logger Logger) context.Context {
+	return context.WithValue(
+		context.Background(),
+		loggerKey,
+		logger)
+}
+
+func BuildLogger(prefix string, level logLevel) Logger {
 	return &internalLogger {
 		prefix: prefix,
 		level: glog.Level(level),
@@ -105,4 +111,11 @@ func (l *internalLogger) buildMessage(format string, args ...interface{}) string
 
 func (l *internalLogger) Level(level logLevel) {
 	l.level = glog.Level(level)
+}
+
+func SyncLogLevelFromViper() {
+	verbose := viper.GetString("v")
+	if verbose != "" {
+		flag.Set("v", verbose)
+	}
 }

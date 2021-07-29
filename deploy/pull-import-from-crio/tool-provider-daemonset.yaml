@@ -1,0 +1,147 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: katalogos-csi-toolprovider
+spec:
+  selector:
+    matchLabels:
+      app: katalogos-csi-toolprovider
+  template:
+    metadata:
+      labels:
+        app: katalogos-csi-toolprovider
+    spec:
+      hostNetwork: true
+      containers:
+        - name: node-driver-registrar
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+          imagePullPolicy: IfNotPresent
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/toolprovider.csi.katalogos-reg.sock"]
+          args:
+            - --v=5
+            - --csi-address=/csi/csi.sock
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/katalogos-csi-toolprovider/socket/csi.sock
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+          - mountPath: /registration
+            name: registration-dir
+
+        - name: toolprovider
+          image: quay.io/katalogos/toolproviderplugin:canary
+          ports:
+            - name: web
+              containerPort: 8080  
+          args:
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--nodeid=$(KUBE_NODE_NAME)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: /var/lib/kubelet/pods
+              mountPropagation: Bidirectional
+              name: mountpoint-dir
+            - mountPath: /var/lib/containers/storage
+              mountPropagation: Bidirectional
+              name: storageroot-dir
+            - mountPath: /var/run/containers/storage
+              mountPropagation: Bidirectional
+              name: storagerunroot-dir
+            - mountPath: /var/run/toolprovider-metadata-store
+              name: metadata-store-dir
+            - mountPath: /etc/katalogos/images-config
+              name: images-config
+            - mountPath: /etc/katalogos/config
+              name: config
+        - name: softwarecatalogsadapter
+          image: quay.io/katalogos/softwarecatalogsadapter:canary
+          args:
+            - "--transport_to_pull_from=containers-storage:[/runtime-storage-root+/var/run/containers/storage]"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /var/lib/containers/storage
+              mountPropagation: Bidirectional
+              name: storageroot-dir
+            - mountPath: /runtime-storage-root
+              mountPropagation: Bidirectional
+#              readOnly: true
+              name: host-storageroot-dir
+            - mountPath: /var/run/containers/storage
+              mountPropagation: Bidirectional
+              name: storagerunroot-dir
+            - mountPath: /etc/katalogos/mergedcatalogs-config
+              name: mergedcatalogs-config
+            - mountPath: /etc/katalogos/images-config
+              name: images-config
+            - mountPath: /etc/katalogos/config
+              name: config
+      volumes:
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/socket
+            type: DirectoryOrCreate
+          name: socket-dir
+        - hostPath:
+            path: /var/lib/kubelet/pods
+            type: DirectoryOrCreate
+          name: mountpoint-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: Directory
+          name: registration-dir
+        - hostPath:
+            path: /var/lib/containers/storage
+            type: DirectoryOrCreate
+          name: host-storageroot-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/metadata-store-dir
+            type: DirectoryOrCreate
+          name: metadata-store-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/storageroot-dir
+            type: DirectoryOrCreate
+          name: storageroot-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/storagerunroot-dir
+            type: DirectoryOrCreate
+          name: storagerunroot-dir
+        - configMap:
+            name: katalogos-merged-catalogs
+          name: mergedcatalogs-config
+        - hostPath:
+            path: /var/lib/kubelet/plugins/katalogos-csi-toolprovider/images-config
+            type: DirectoryOrCreate
+          name: images-config
+        - configMap:
+            name: katalogos-config
+            optional: true
+          name: config
+          
+

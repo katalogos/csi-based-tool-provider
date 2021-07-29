@@ -19,19 +19,23 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
+	"github.com/katalogos/csi-based-tool-provider/pkg/common"
 )
 
 const (
 	imageTagPrefix         = "imageTag."
+	containerImagePrefix   = "containerImage."
 	containerIDSuffix      = ".containerId"
 	containerPrefix        = "container."
 	mountPathSuffix        = ".mountPath"
+	catalogSuffix          = ".catalog"
 	volumePrefix           = "volume."
 	volumeMidFix           = ".volume."
 	containerToCleanPrefix = "containerToClean."
@@ -46,8 +50,16 @@ func (keyNames) containerForImage(image string) []byte {
 	return []byte(imageTagPrefix + image + containerIDSuffix)
 }
 
-func (keyNames) containerMountPath(containerID string) []byte {
+func (keyNames) mountPathForContainer(containerID string) []byte {
 	return []byte(containerPrefix + containerID + mountPathSuffix)
+}
+
+func (keyNames) catalogForContainer(containerID string) []byte {
+	return []byte(containerPrefix + containerID + catalogSuffix)
+}
+
+func (keyNames) imageIDForContainer(containerID string) []byte {
+	return []byte(containerImagePrefix + containerID)
 }
 
 func (keyNames) containerForVolume(volumeID string) []byte {
@@ -64,9 +76,9 @@ func (keyNames) containerToClean(containerID string) []byte {
 
 var keys = keyNames{}
 
-func (store *metadataStore) selectContainerForVolume(volumeID, image string) (string, string, error) {
-	containerID := ""
-	mountPath := ""
+func (store *metadataStore) selectContainerForVolume(volumeID, image string) (containerID, catalog, mountPath string, _ error) {
+	containerID = ""
+	mountPath = ""
 	err := store.db.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(keys.containerForImage(image))
 		if err != nil {
@@ -78,12 +90,22 @@ func (store *metadataStore) selectContainerForVolume(volumeID, image string) (st
 		}); err != nil {
 			return err
 		}
-		item, err = txn.Get(keys.containerMountPath(containerID))
+		item, err = txn.Get(keys.mountPathForContainer(containerID))
 		if err != nil {
 			return err
 		}
 		if err = item.Value(func(mountPathBytes []byte) error {
 			mountPath = string(mountPathBytes)
+			return nil
+		}); err != nil {
+			return err
+		}
+		item, err = txn.Get(keys.catalogForContainer(containerID))
+		if err != nil {
+			return err
+		}
+		if err = item.Value(func(catalogBytes []byte) error {
+			catalog = string(catalogBytes)
 			return nil
 		}); err != nil {
 			return err
@@ -98,12 +120,12 @@ func (store *metadataStore) selectContainerForVolume(volumeID, image string) (st
 		return nil
 	})
 
-	return containerID, mountPath, err
+	return containerID, catalog, mountPath, err
 }
 
-func (store *metadataStore) deleteImagesMissingFromCatalog(ctx context.Context, images []string) (errors []error) {
+func (store *metadataStore) deleteImagesMissingFromCatalog(ctx context.Context, images map[string]imageDescription) (errors []error) {
 	imageSet := map[string]int{}
-	for _, image := range images {
+	for image := range images {
 		imageSet[string(keys.containerForImage(image))] = 0
 	}
 	store.db.Update(func(txn *badger.Txn) error {
@@ -120,6 +142,25 @@ func (store *metadataStore) deleteImagesMissingFromCatalog(ctx context.Context, 
 			}
 		}
 		for _, keyToDelete := range keysToDelete {
+			var containerID string
+			item, err := txn.Get(keyToDelete)
+			if err != nil {
+				errors = append(errors, err)
+				continue
+			}
+			if err = item.Value(func(containerIDBytes []byte) error {
+				containerID = string(containerIDBytes)
+				return nil
+			}); err != nil {
+				errors = append(errors, err)
+				continue
+			}
+	
+			if err := txn.Set(keys.containerToClean(containerID), []byte{}); err != nil {
+				errors = append(errors, err)
+				continue
+			}
+
 			if err := txn.Delete(keyToDelete); err != nil {
 				errors = append(errors, err)
 			}
@@ -132,17 +173,18 @@ func (store *metadataStore) deleteImagesMissingFromCatalog(ctx context.Context, 
 func (store *metadataStore) updateImage(
 	ctx context.Context,
 	image string,
-	newDigest string,
-	getImageDigestFromContainer func(ctx context.Context, containerID string) (string, error),
-	createContainer func(ctx context.Context, image, newDigest string) (string, error),
+	newImageID string,
+	catalog string,
+	getImageIDFromContainer func(ctx context.Context, containerID string) (string, error),
+	createContainer func(ctx context.Context, image, newImageID string) (string, error),
 	isPathMounted func(mountPath string) bool,
 	mountContainer func(ctx context.Context, containerID string) (string, error),
 	deleteContainer func(ctx context.Context, containerID string) error,
 ) error {
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 	return store.db.Update(func(txn *badger.Txn) error {
 		containerID := ""
-		currentDigest := ""
+		currentImageID := ""
 		item, err := txn.Get(keys.containerForImage(image))
 		if err != nil && err != badger.ErrKeyNotFound {
 			return err
@@ -153,19 +195,19 @@ func (store *metadataStore) updateImage(
 				return err
 			}
 			containerID = string(containerIDBytes)
-			currentDigest, err = getImageDigestFromContainer(ctx, containerID)
+			currentImageID, err = getImageIDFromContainer(ctx, containerID)
 			if err != nil {
 				return err
 			}
 		}
 
-		if newDigest == currentDigest {
-			// The image Sha is the same and it already has a container created
+		if newImageID == currentImageID {
+			// The image ID is the same and it already has a container created
 			// However if the node was just restarted, it might be that the container
 			// is not mounted properly anymore. Since it doesn't hurt to mount a
 			// container several times through buildah, let's mount it anyway.
 			containerIsUsable := true
-			item, err = txn.Get(keys.containerMountPath(containerID))
+			item, err = txn.Get(keys.mountPathForContainer(containerID))
 			if err == nil {
 				storedMountPath, err := item.ValueCopy(nil)
 				if err != nil {
@@ -201,7 +243,7 @@ func (store *metadataStore) updateImage(
 			}
 		}
 
-		newContainerID, err := createContainer(ctx, image, newDigest)
+		newContainerID, err := createContainer(ctx, image, newImageID)
 		if err != nil {
 			return err
 		}
@@ -216,7 +258,17 @@ func (store *metadataStore) updateImage(
 			deleteContainer(ctx, newContainerID)
 			return err
 		}
-		err = txn.Set(keys.containerMountPath(newContainerID), []byte(mountPath))
+		err = txn.Set(keys.mountPathForContainer(newContainerID), []byte(mountPath))
+		if err != nil {
+			deleteContainer(ctx, newContainerID)
+			return err
+		}
+		err = txn.Set(keys.catalogForContainer(newContainerID), []byte(catalog))
+		if err != nil {
+			deleteContainer(ctx, newContainerID)
+			return err
+		}		
+		err = txn.Set(keys.imageIDForContainer(newContainerID), []byte(newImageID))
 		if err != nil {
 			deleteContainer(ctx, newContainerID)
 			return err
@@ -227,7 +279,7 @@ func (store *metadataStore) updateImage(
 }
 
 func (store *metadataStore) getContainersToDelete(ctx context.Context) ([]string, error) {
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 	containersToDelete := []string{}
 	if err := store.db.Update(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -253,10 +305,16 @@ func (store *metadataStore) getContainersToDelete(ctx context.Context) ([]string
 			}
 		}
 		for _, containerToDelete := range containersToDelete {
-			if err := txn.Delete(keys.containerMountPath(containerToDelete)); err != nil {
+			if err := txn.Delete(keys.mountPathForContainer(containerToDelete)); err != nil {
+				logger.Warningf("Error cleaning container %s: %v", containerToDelete, err)
+			}
+			if err := txn.Delete(keys.catalogForContainer(containerToDelete)); err != nil {
 				logger.Warningf("Error cleaning container %s: %v", containerToDelete, err)
 			}
 			if err := txn.Delete(keys.containerToClean(containerToDelete)); err != nil {
+				logger.Warningf("Error cleaning container %s: %v", containerToDelete, err)
+			}
+			if err := txn.Delete(keys.imageIDForContainer(containerToDelete)); err != nil {
 				logger.Warningf("Error cleaning container %s: %v", containerToDelete, err)
 			}
 		}
@@ -311,8 +369,8 @@ func (store *metadataStore) dropVolumeContainerOnUnmount(ctx context.Context, vo
 	})
 }
 
-func (store *metadataStore) garbageCollector(ticker *time.Ticker) {
-	for range ticker.C {
+func (store *metadataStore) garbageCollector(channel <-chan time.Time) {
+	for range channel {
 	again:
 		err := store.db.RunValueLogGC(0.7)
 		if err == nil {
@@ -321,58 +379,45 @@ func (store *metadataStore) garbageCollector(ticker *time.Ticker) {
 	}
 }
 
-func (store *metadataStore) imageManager(ticker *time.Ticker) {
-	ctx := context.WithValue(
-		context.Background(),
-		loggerKey,
-		buildLogger("ImageManager", levelImageManager))
-	updateImages(ctx, store)
-	for range ticker.C {
-		updateImages(ctx, store)
+func (store *metadataStore) imageManager(channel <-chan time.Time, imagesConfigFile string) {
+	ctx := common.WithLogger(common.BuildLogger("ImageManager", common.LevelImageManager))
+	updateImages(ctx, store, imagesConfigFile)
+	for range channel {
+		updateImages(ctx, store, imagesConfigFile)
 	}
 }
 
-func (store *metadataStore) containerCleaner(ticker *time.Ticker) {
-	ctx := context.WithValue(
-		context.Background(),
-		loggerKey,
-		buildLogger("ContainerCleaner", levelImageManager))
-	for range ticker.C {
+func (store *metadataStore) containerCleaner(channel <-chan time.Time) {
+	ctx := common.WithLogger(common.BuildLogger("ContainerCleaner", common.LevelContainerCleaner))
+	for range channel {
 		cleanContainers(ctx, store)
 	}
 }
 
 type storeLogger struct {
-	logger
+	common.Logger
 }
 
 func (l *storeLogger) Debugf(format string, args ...interface{}) {
-	l.LeveledInfof(levelBadgerDebug, format, args)
+	l.LeveledInfof(common.LevelBadgerDebug, format, args)
 }
 
-func (store *metadataStore) init() (createdStore bool, startBackgroudTasks func(), cleanup func()) {
+func (store *metadataStore) init(imagesDirectory string, imChannel, gcChannel, ccChannel <-chan time.Time) (createdStore bool, startBackgroudTasks func(), cleanup func()) {
 	glog.Infof("Creating metadata store if necessary")
 	created := false
-	if _, err := os.Stat(metadataStorePath); err != nil && os.IsNotExist(err) {
+	if _, err := os.Stat(path.Join(metadataStorePath, badger.ManifestFilename)); err != nil && os.IsNotExist(err) {
 		created = true
 	}
 
 	var err error = nil
 	options := badger.DefaultOptions(metadataStorePath)
 	options.Logger = &storeLogger{
-		logger: &internalLogger{
-			prefix: "Badger",
-			level:  glog.Level(levelBadger),
-		},
+		Logger: common.BuildLogger("Badger", common.LevelBadger),
 	}
 	store.db, err = badger.Open(options)
 	if err != nil {
 		glog.Fatalf("Failed to create metadata store: %v", err)
 	}
-
-	gcTicker := time.NewTicker(5 * time.Minute)
-	imTicker := time.NewTicker(2 * time.Minute)
-	ccTicker := time.NewTicker(4 * time.Minute)
 
 	glog.Infof("Registering Metadata Store Reader")
 	r := mux.NewRouter()
@@ -421,14 +466,11 @@ func (store *metadataStore) init() (createdStore bool, startBackgroudTasks func(
 
 	return created,
 		func() {
-			go store.garbageCollector(gcTicker)
-			go store.imageManager(imTicker)
-			go store.containerCleaner(ccTicker)
+			go store.garbageCollector(gcChannel)
+			go store.imageManager(imChannel, imagesDirectory)
+			go store.containerCleaner(ccChannel)
 		},
 		func() {
-			imTicker.Stop()
-			ccTicker.Stop()
-			gcTicker.Stop()
 			store.db.Close()
 		}
 }

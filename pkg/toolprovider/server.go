@@ -23,7 +23,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"golang.org/x/net/context"
+	"github.com/katalogos/csi-based-tool-provider/pkg/common"
+	"context"
 	"google.golang.org/grpc"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -125,9 +126,9 @@ func getCallLogPrefix() string {
 func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	start := time.Now() 
 	prefix := getCallLogPrefix()
-	grpcCallLogger := buildLogger(prefix, levelGRPCCalls)
+	grpcCallLogger := common.BuildLogger(prefix, common.LevelGRPCCalls)
 	handlerLogger := grpcCallLogger
-	volumePublishingLogger := buildLogger(prefix, levelVolumePublishing)
+	volumePublishingLogger := common.BuildLogger(prefix, common.LevelVolumePublishing)
 	method := info.FullMethod
 	methodParts := strings.Split(method, "/")
 	methodName := methodParts[len(methodParts)-1]
@@ -141,7 +142,7 @@ func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, h
 		volumePublishingLogger.Infof("Starting %s: ", method)
 		handlerLogger = volumePublishingLogger
 	}
-	resp, err := handler(context.WithValue(ctx, loggerKey, handlerLogger), req)
+	resp, err := handler(common.WithLogger(handlerLogger), req)
 	duration := time.Now().Sub(start)
 	if err != nil {
 		grpcCallLogger.Errorf("GRPC error: %v - response: %+v", err, protosanitizer.StripSecrets(resp))

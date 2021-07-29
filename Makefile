@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CMDS=toolproviderplugin
+CMDS=toolproviderplugin softwarecatalogsadapter
 all: build
 
 include release-tools/build.make

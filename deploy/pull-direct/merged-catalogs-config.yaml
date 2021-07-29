@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: katalogos-merged-catalogs
+data:
+  catalogs.json: |-
+    {
+      "default/java-catalog": {
+        "description": "Java catalog",
+        "entries": {
+          "java": {
+            "description": "Java",
+            "image": "quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest"
+          },
+          "maven": {
+            "description": "Maven",
+            "image": "quay.io/dfestal/csi-tool-maven-3.6.3:latest"
+          }
+        }
+      },
+      "default/cli-catalog": {
+        "description": "CLI catalog",
+        "entries": {
+          "bash-core-utils": {
+            "description": "Bash - Core utils",
+            "image": "quay.io/dfestal/csi-tool-bash-coreutils:latest"
+          }
+        }
+      }
+    }
+
+    
+  
+# Sont effaçables les images qui existent et qui ne sont:
+# - ni mentionnées dans un des catalogues (au digest près)
+# - ni mentionnées dans cette config map
+# - ni mentionnées dans node-used-images.yaml (availableImages + usedImages digests)

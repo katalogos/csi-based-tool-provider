@@ -12,23 +12,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package toolprovider
+package common
 
 import (
 	"os/exec"
 	"strings"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
-const buildahPath = "/bin/buildah"
+const BuildahPath = "/bin/buildah"
 
-func runCmd(ctx context.Context, execPath string, args ...string) (string, error) {
-	logger := contextLogger(ctx)
+func RunCmd(ctx context.Context, execPath string, args ...string) (string, error) {
+	logger := ContextLogger(ctx)
 	cmd := exec.Command(execPath, args...)
-	logger.LeveledInfof(levelRunCommand, "Executing command: %s\n", cmd.String())
+	logger.LeveledInfof(LevelRunCommand, "Executing command: %s\n", cmd.String())
 	output, execErr := cmd.CombinedOutput()
 	result := strings.TrimSpace(string(output[:]))
-	logger.LeveledInfof(levelRunCommand, "    => Output = %s\n", result)
+	logger.LeveledInfof(LevelRunCommand, "    => Output = %s\n", result)
 	return result, execErr
 }

@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: katalogos-csi-toolprovider
-data:
-  images: |
-    quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
-    quay.io/dfestal/csi-tool-maven-3.6.3:latest

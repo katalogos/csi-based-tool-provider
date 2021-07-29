@@ -3,14 +3,14 @@ apiVersion: batch/v1beta1
 metadata:
   name: katalogos-puller
 spec:
-  schedule: '0 * * * *'
+  schedule: '* * * * *'
   concurrencyPolicy: Forbid
   suspend: false
   jobTemplate:
     spec:
       backoffLimit: 0      
-      completions: 1
-      parallelism: 1
+      completions: 1 # Set this number to the number of nodes
+      parallelism: 1 # Set this number to the number of nodes
       template:
         metadata:
           labels:
@@ -24,6 +24,10 @@ spec:
                     matchLabels:
                       app: "katalogos-puller"
           containers:
+            - name: bash-core-utils
+              image: >-
+                quay.io/dfestal/csi-tool-bash-coreutils:latest
+              imagePullPolicy: Always
             - name: jdk
               image: >-
                 quay.io/dfestal/csi-tool-openjdk11u-jdk_x64_linux_hotspot_11.0.9.1_1:latest
@@ -33,6 +37,5 @@ spec:
               imagePullPolicy: Always
           restartPolicy: Never
           terminationGracePeriodSeconds: 0
-      ttlSecondsAfterFinished: 120
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1

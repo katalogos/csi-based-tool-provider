@@ -18,86 +18,87 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
-	"golang.org/x/net/context"
-	"k8s.io/kubernetes/pkg/util/mount"
+	"context"
+	"k8s.io/mount-utils"
 
-	"github.com/containers/image/v5/docker/reference"
+	"github.com/katalogos/csi-based-tool-provider/pkg/common"
 )
 
-const (
-	configDirectory = "/etc/toolprovider-catalog-config/"
-	imagesConfigFile = "images"
-)
+type imageDescription struct {
+	imageID string
+	catalog string
+}
 
-func getCatalogImagesFromConfigMap(ctx context.Context) ([]string, error) {
-	imagesBytes, err := ioutil.ReadFile(configDirectory + imagesConfigFile)
+func getCatalogImagesFromConfigMap(ctx context.Context, imagesConfigFile string) (map[string]imageDescription, error) {
+	imagesBytes, err := ioutil.ReadFile(imagesConfigFile)
 	if err != nil {
 		return nil, err
 	}
 
-	return strings.Split(strings.Trim(string(imagesBytes), "\n"), "\n"), nil
-}
-
-func getImageDigestFromContainer(ctx context.Context, containerID string) (string, error) {
-	// Create a container from the image
-	imageDigest, err := runCmd(ctx, buildahPath, "inspect", "--format", "{{.FromImageDigest}}", containerID)
-	if err != nil {
-		return "", err
+	result := map[string]imageDescription{}
+	for _, imageLine := range strings.Split(strings.Trim(string(imagesBytes), "\n"), "\n") {
+		if strings.TrimSpace(imageLine) == "" {
+			continue
+		}
+		imageLineParts := strings.Split(imageLine, "=")
+		imageName := strings.Trim(imageLineParts[0], " ")
+		var imageID string
+		var catalog string
+		if len(imageLineParts) > 1 {
+			imageDescriptionParts := strings.SplitN(imageLineParts[1], ",", 2)
+			imageID = strings.Trim(imageDescriptionParts[0], " ")
+			if len(imageDescriptionParts) > 1 {
+				catalog = strings.Trim(imageDescriptionParts[1], " ")
+			}
+		}
+		result[imageName] = imageDescription{
+			imageID: imageID,
+			catalog: catalog,
+		} 
 	}
-	return imageDigest, nil
-}
-
-func createContainer(ctx context.Context, image, newDigest string) (string, error) {
-	logger := contextLogger(ctx)
 	
-	// create a new container from image with new digest	
-	logger.Infof("Creating container from image %s with digest %s", image, newDigest)
+	return result, nil
+}
 
-	// Build image reference with digest
-	imageReference, err := reference.ParseDockerRef(image)
+func getImageIDFromContainer(ctx context.Context, containerID string) (string, error) {
+	// Create a container from the image
+	imageID, err := common.RunCmd(ctx, common.BuildahPath, "inspect", "--format", "{{.FromImageID}}", containerID)
 	if err != nil {
 		return "", err
 	}
 
-	imageName, err := reference.WithName(imageReference.Name())
-	if err != nil {
-		return "", err
-	}
+	return imageID, nil
+}
 
-	imageDigest, err := digest.Parse(newDigest)
-	if err != nil {
-		return "", err
-	}
+func createContainer(ctx context.Context, image, newImageID string) (string, error) {
+	logger := common.ContextLogger(ctx)
+	
+	// create a new container from image with new ImageID	
+	logger.Infof("Creating container from image %s with imageID %s", image, newImageID)
 
-	imageNameWithDigest, err := reference.WithDigest(imageName, imageDigest)
+	// Create a container from the image
+	containerName, err := common.RunCmd(ctx, common.BuildahPath, "from", "--pull-never", newImageID)
 	if err != nil {
 		return "", err
 	}
 
 	// Create a container from the image
-	containerName, err := runCmd(ctx, buildahPath, "from", "--pull-never", imageNameWithDigest.String())
-	if err != nil {
-		return "", err
-	}
-
-	// Create a container from the image
-	containerID, err := runCmd(ctx, buildahPath, "containers", "-q", "--filter", "name=" + containerName)
+	containerID, err := common.RunCmd(ctx, common.BuildahPath, "containers", "-q", "--filter", "name=" + containerName)
 	if err != nil {
 		return "", err
 	}
 
 	// create a new container from image with new digest	
-	logger.Infof("Container created from image %s with digest %s: %s", image, newDigest, containerID)
+	logger.Infof("Container created from image %s with imageID %s: %s", image, newImageID, containerID)
 
 	return containerID, nil			
 }
 
 func mountContainer(ctx context.Context, containerID string) (string, error) {
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 
 	logger.Infof("Mounting container %s", containerID)
-	containerMount, err := runCmd(ctx, buildahPath, "mount", containerID)
+	containerMount, err := common.RunCmd(ctx, common.BuildahPath, "mount", containerID)
 	if err != nil {
 		return "", err
 	}
@@ -107,12 +108,12 @@ func mountContainer(ctx context.Context, containerID string) (string, error) {
 }
 
 func deleteContainer(ctx context.Context, containerID string) error {
-	logger := contextLogger(ctx)
+	logger := common.ContextLogger(ctx)
 
 	logger.Infof("Deleting container %s", containerID)
 
 	// Delete the container
-	_, err := runCmd(ctx, buildahPath, "rm", containerID)
+	_, err := common.RunCmd(ctx, common.BuildahPath, "rm", containerID)
 	if err != nil {
 		logger.Errorf("%v", err)
 		return err
@@ -121,9 +122,9 @@ func deleteContainer(ctx context.Context, containerID string) error {
 	return nil
 }
 
-func updateImages(ctx context.Context, store *metadataStore) {
-	logger := contextLogger(ctx)
-	images, err := getCatalogImagesFromConfigMap(ctx)
+func updateImages(ctx context.Context, store *metadataStore, imagesConfigFile string) {
+	logger := common.ContextLogger(ctx)
+	images, err := getCatalogImagesFromConfigMap(ctx, imagesConfigFile)
 	if err != nil {
 		logger.Errorf("%v", err)
 		return
@@ -153,20 +154,25 @@ func updateImages(ctx context.Context, store *metadataStore) {
 		return false
 	}
 
-	for _, image := range images {
-
+	for image, imageDescription := range images {
 		logger.Infof("Updating image: %s", image)
-		newDigest, err := runCmd(ctx, buildahPath, "images", "--format={{.Digest}}", image)
+		imageToSearch := imageDescription.imageID
+		if imageToSearch == "" {
+			imageToSearch = image
+		}
+
+		newImageID, err := common.RunCmd(ctx, common.BuildahPath, "pull", "--policy", "never", imageToSearch)
 		if err != nil {
 			logger.Errorf("Image %s not available : %v", image, err)
 			continue
 		}
-	
+
 		if err = store.updateImage(
 			ctx,
 			image,
-			newDigest,
-			getImageDigestFromContainer,
+			newImageID,
+			imageDescription.catalog,
+			getImageIDFromContainer,
 			createContainer,
 			isPathMounted,
 			mountContainer,

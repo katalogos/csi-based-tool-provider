@@ -16,7 +16,7 @@ package toolprovider
 
 import (
 	"github.com/golang/glog"
-	"golang.org/x/net/context"
+	"context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 

@@ -1,11 +1,11 @@
 # CSI-based tool provider
 
 This CSI driver implements the POC of a CSI-based tool provider.
-It allows mounting in PODs, in read-only mode and as CSI volumes, the content of container images
+It allows injecting into PODs, as read-only mounted CSI volumes, the content of container images
 gathered as software catalogs.
 
 The idea is to allow "injecting" a Java, Maven or any other self-contained tool installation
-into an existing container, thanks to a CSI volume.
+into an existing container, thanks to an inline ephemeral CSI volume.
 
 #### More details
 
@@ -18,7 +18,7 @@ testing it on CRC is recommended.
 
 ##### To install it on CRC:
 
-- First add the csi volumes to the lisyt of volumes allowed in the `restricted` SCC:
+- First add the csi volumes to the list of volumes allowed in the `restricted` SCC:
 
 ```bash
 oc patch scc restricted --type='json' -p='[{"op": "add", "path": "/volumes/-", "value": "csi"}]'

@@ -12,20 +12,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package toolprovider
+package common
 
-import (
-	"context"
-	"github.com/katalogos/csi-based-tool-provider/pkg/common"
+const (
+	ImagesFileName string = "images"
 )
-
-func cleanContainers(ctx context.Context, store *metadataStore) {
-	logger := common.ContextLogger(ctx)
-	containerIDs, err := store.getContainersToDelete(ctx)
-	if err != nil {
-		logger.Errorf("%v", err)
-	}
-	for _, containerID := range containerIDs {
-		deleteContainer(ctx, containerID)
-	}
-}

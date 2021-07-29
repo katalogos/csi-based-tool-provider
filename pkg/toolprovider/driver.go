@@ -17,8 +17,11 @@ package toolprovider
 import (
 	"context"
 	"errors"
+	"path"
+	"time"
 
 	"github.com/golang/glog"
+	"github.com/katalogos/csi-based-tool-provider/pkg/common"
 )
 
 type toolProvider struct {
@@ -26,10 +29,12 @@ type toolProvider struct {
 	nodeID            string
 	version           string
 	endpoint          string
+	imChannel, gcChannel, ccChannel <-chan time.Time
+	ImagesConfigFile string
 
 	ids *identityServer
 	ns  *nodeServer
-	cs  *controllerServer
+	cs  *controllerServer	
 }
 
 var (
@@ -39,7 +44,7 @@ var (
 func init() {
 }
 
-func NewToolProviderDriver(driverName, nodeID, endpoint, version string) (*toolProvider, error) {
+func NewToolProviderDriver(driverName, nodeID, endpoint, version, imagesDirectory string, imChannel, gcChannel, ccChannel <-chan time.Time) (*toolProvider, error) {
 	if driverName == "" {
 		return nil, errors.New("no driver name provided")
 	}
@@ -63,17 +68,22 @@ func NewToolProviderDriver(driverName, nodeID, endpoint, version string) (*toolP
 		version:           vendorVersion,
 		nodeID:            nodeID,
 		endpoint:          endpoint,
+		imChannel: imChannel,
+		gcChannel: gcChannel,
+		ccChannel: ccChannel,
+		ImagesConfigFile: path.Join(imagesDirectory, common.ImagesFileName),
 	}, nil
 }
 
 func (tp *toolProvider) Run() {
 	store := &metadataStore{}
-	created, startBackgroundTasks, cleanup := store.init()
+
+	created, startBackgroundTasks, cleanup := store.init(tp.ImagesConfigFile, tp.imChannel, tp.gcChannel, tp.ccChannel)
 	defer cleanup() 
 
 	if created {
 		glog.Infof("Created a new metadata store => removing all existing containers")
-		runCmd(context.Background(), buildahPath, "rm", "--all")
+		common.RunCmd(context.Background(), common.BuildahPath, "rm", "--all")
 	}
 
 	startBackgroundTasks()
