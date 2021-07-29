@@ -7,11 +7,21 @@ gathered as software catalogs.
 The idea is to allow "injecting" a Java, Maven or any other self-contained tool installation
 into an existing container, thanks to an inline ephemeral CSI volume.
 
-#### More details
+## What does it solve ?
 
-TBD
+#### A problem
 
-#### How to test it
+Instead of having to bundle every possible tool inside a container **at image build time**...
+
+![Katalogos - The problem](https://user-images.githubusercontent.com/686586/127527553-1ba0c00f-e70a-4ade-8c08-1e532fec8b83.png)
+
+#### A solution
+
+... why not allow injecting each containerized tool seperately **at runtime**, thus allowing **composition**, **better image reuse**, and **reducing image-build burden**:
+
+![Katalogos - The solution](https://user-images.githubusercontent.com/686586/127528197-054ec139-b341-4902-8119-cc8d15f86a8c.png)
+
+## How to test it
 
 Since it is designed to leverage Kubernetes clusters that use an OCI-compatible engine,
 testing it on CRC is recommended.
