@@ -71,7 +71,7 @@ inside a `from scratch` container that contains precisely nothing.
 - Apply the following example YAML files:
 
 ```bash
-kubectl apply -f examples/quarkus-quickstart/
+kubectl apply -f examples/bash-coreutils-on-scratch-image.yaml
 ```
 
 When the example is run, you can exec one of those injected binaries, ike `uname` for example:
