@@ -77,5 +77,5 @@ kubectl apply -f examples/quarkus-quickstart/
 When the example is run, you can exec one of those injected binaries, ike `uname` for example:
 
 ```bash
-kubectl exec <example pod name< -- uname -a
+kubectl exec <example pod name> -- uname -a
 ```
