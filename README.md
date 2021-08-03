@@ -29,10 +29,10 @@ Instead of having to bundle every possible tool inside a container **at image bu
 
 - Ensure you are logged to your Kubernetes cluster as `cluster-admin` and use the `default` namespace 
 
-- On OpenShift (or CRC), as well as any Kubernetes distribution that doesn't allow CSI inline volumes in PODs by default, you should first add the `csi` volumes to the list of volumes allowed in the `restricted` SCC:
+- On OpenShift (or CRC), since it is a Kubernetes that doesn't allow CSI inline volumes in PODs by default, you should first add the `csi` volumes to the list of volumes allowed in the `restricted` SCC:
 
 ```bash
-kubecly patch scc restricted --type='json' -p='[{"op": "add", "path": "/volumes/-", "value": "csi"}]'
+kubecl patch scc restricted --type='json' -p='[{"op": "add", "path": "/volumes/-", "value": "csi"}]'
 ```
 - Apply the deployment YAML files:
 
